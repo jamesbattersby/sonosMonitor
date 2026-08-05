@@ -5,6 +5,21 @@ history as a web dashboard — top tracks, artists, albums and radio stations,
 filterable by time period and room — plus a live system-status panel (per-room
 online/offline, volume, grouping, battery).
 
+## The Web Interface
+
+At the top are some filter selections, system status and graphs showing the numbers of play starts over time.
+The interface does refresh on system events and a timer.
+
+![Top panels](./doc-images/top-4-panels.png)
+
+The remainder of the interface contains panels with different lists of most pouplar items.  Each panel has indicators to show the change since the
+previous period (if you are showing data for 1 week, the delta will be from the previous week)
+
+![Top Tracks](./doc-images/top-track.png)
+![Top Artists](./doc-images/top-artists.png)
+
+Other panels contain the Top Albums, Top Radio Stations, Music Services and Line-In.
+
 It has two long-running parts that share one SQLite database, plus an optional
 Apache front end:
 
