@@ -1,0 +1,17 @@
+[Unit]
+Description=Sonos play-history web dashboard (Flask on 127.0.0.1:8001)
+After=network.target
+
+[Service]
+Type=simple
+# Fill in before installing — see the "Run as a service" section in README.md.
+User=<USER>
+WorkingDirectory=<PROJECT_DIR>
+# Flask's built-in server is fine at this scale. For heavier use, swap to:
+#   ExecStart=<PYTHON_BIN_DIR>/gunicorn --chdir <PROJECT_DIR> --bind 127.0.0.1:8001 web.app:app
+ExecStart=<PYTHON_BIN> -u <PROJECT_DIR>/web/app.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

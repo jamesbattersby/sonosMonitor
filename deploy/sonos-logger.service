@@ -1,0 +1,16 @@
+[Unit]
+Description=Sonos play-history logger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Fill in before installing — see the "Run as a service" section in README.md.
+User=<USER>
+WorkingDirectory=<PROJECT_DIR>
+ExecStart=<PYTHON_BIN> -u <PROJECT_DIR>/sonosMonitor.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sonos Play History</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7f9; --fg: #1b1d21;
+      --card-bg: #fff; --card-shadow: 0 1px 3px rgba(0,0,0,.08);
+      --border-th: #eee; --border-td: #eee;
+      --select-bg: #fff; --select-border: #ccc;
+      --count-bg: #eef0f3;
+      --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+      --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+      --series-9: #7b5ffa; --series-10: #8e1777; --series-11: #a20a01; --series-12: #c37bb9;
+      --series-13: #3a3dc1; --series-14: #02906a; --series-15: #0196e8;
+      --series-other: #52514e;
+      /* Status palette: fixed, same hex in light and dark (see the dataviz
+         skill's palette.md) -- declared once here rather than repeated in
+         every theme block below. */
+      --status-good: #0ca30c; --status-serious: #ec835a; --status-critical: #d03b3b;
+      --status-muted: #898781;
+      /* Transient "this row just changed" flash (polling updates), not a
+         status color -- a translucent wash reads fine unmodified against
+         either surface, so it's fixed rather than themed per-block too. */
+      --row-highlight: rgba(255, 196, 0, .28);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16181d; --fg: #e7e9ee;
+        --card-bg: #22252c; --card-shadow: none;
+        --border-th: #3a3f48; --border-td: #2b2f37;
+        --select-bg: #22252c; --select-border: #3a3f48;
+        --count-bg: #2b2f37;
+        --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+        --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+        --series-9: #893cfc; --series-10: #c37ba0; --series-11: #c73f10; --series-12: #df3af8;
+        --series-13: #6a69aa; --series-14: #09b16a; --series-15: #0576dd;
+        --series-other: #c3c2b7;
+      }
+    }
+    /* Explicit user choice (data-theme, set by the toggle) always wins over
+       the system preference above, thanks to the higher-specificity
+       attribute selector. */
+    :root[data-theme="light"] {
+      --bg: #f6f7f9; --fg: #1b1d21;
+      --card-bg: #fff; --card-shadow: 0 1px 3px rgba(0,0,0,.08);
+      --border-th: #eee; --border-td: #eee;
+      --select-bg: #fff; --select-border: #ccc;
+      --count-bg: #eef0f3;
+      --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+      --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+      --series-9: #7b5ffa; --series-10: #8e1777; --series-11: #a20a01; --series-12: #c37bb9;
+      --series-13: #3a3dc1; --series-14: #02906a; --series-15: #0196e8;
+      --series-other: #52514e;
+    }
+    :root[data-theme="dark"] {
+      --bg: #16181d; --fg: #e7e9ee;
+      --card-bg: #22252c; --card-shadow: none;
+      --border-th: #3a3f48; --border-td: #2b2f37;
+      --select-bg: #22252c; --select-border: #3a3f48;
+      --count-bg: #2b2f37;
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+      --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+      --series-9: #893cfc; --series-10: #c37ba0; --series-11: #c73f10; --series-12: #df3af8;
+      --series-13: #6a69aa; --series-14: #09b16a; --series-15: #0576dd;
+      --series-other: #c3c2b7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 0; padding: 1.5rem;
+      background: var(--bg); color: var(--fg);
+    }
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    h1 { font-size: 1.4rem; margin: 0; }
+    #theme-toggle {
+      border: 1px solid var(--select-border); background: var(--card-bg); color: inherit;
+      border-radius: 6px; padding: .4rem .6rem; font-size: 1rem; line-height: 1; cursor: pointer;
+    }
+    .filters { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; margin-bottom: 1.5rem; }
+    .filters label { display: flex; flex-direction: column; font-size: .8rem; gap: .25rem; opacity: .8; }
+    select {
+      padding: .4rem .5rem; border-radius: 6px; font-size: .95rem;
+      background: var(--select-bg); color: inherit; border: 1px solid var(--select-border);
+    }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+    @media (max-width: 700px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .card { background: var(--card-bg); border-radius: 10px; padding: 1rem 1.1rem 1.2rem; box-shadow: var(--card-shadow); }
+    .card h2 { font-size: 1.05rem; margin: 0 0 .6rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: .4rem .3rem; border-bottom: 1px solid; }
+    th { font-weight: 600; opacity: .7; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em;
+         border-color: var(--border-th); }
+    td { border-color: var(--border-td); }
+    td.rank { width: 2rem; opacity: .5; }
+    td.plays, th.plays { text-align: right; width: 4rem; }
+    .pos-change { width: 2.6rem; text-align: center; }
+    td.pos-change { white-space: nowrap; }
+    .pos { display: inline-flex; align-items: baseline; gap: .15rem; font-size: .75rem; font-weight: 700; }
+    .pos-up { color: var(--status-good); }
+    .pos-down { color: var(--status-critical); }
+    .pos-same { color: var(--status-muted); font-size: .75rem }
+    .pos-new { color: var(--status-muted); font-size: .75rem; }
+    .pos-delta { font-variant-numeric: tabular-nums; }
+    .count { background: var(--count-bg); border-radius: 10px; padding: .05rem .5rem; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .empty { opacity: .55; font-style: italic; padding: .5rem .3rem; }
+    /* Plays on freshly-inserted <tr> elements (see patchTable() below) --
+       a new node with this class already runs the animation on insertion,
+       no JS timer needed to add/remove it. */
+    .row-changed { animation: row-highlight-fade 3s ease-out; }
+    @keyframes row-highlight-fade {
+      from { background-color: var(--row-highlight); }
+      to { background-color: transparent; }
+    }
+    .chart-card { grid-column: 1 / -1; }
+    .d3-chart { width: 100%; }
+    .d3-chart-time { min-height: 220px; margin-bottom: .4rem; }
+    .d3-chart-share { min-height: 24px; }
+    .d3-chart svg { display: block; width: 100%; overflow: visible; }
+    .d3-chart .axis text { fill: var(--fg); opacity: .6; font-size: .7rem; }
+    .d3-chart .gridline { stroke: var(--border-th); stroke-width: 1px; shape-rendering: crispEdges; }
+    .d3-chart rect.mark, .d3-chart path.mark { cursor: pointer; transition: filter .1s ease; }
+    .d3-chart rect.mark:hover, .d3-chart rect.mark:focus-visible,
+    .d3-chart path.mark:hover, .d3-chart path.mark:focus-visible { filter: brightness(1.15); outline: none; }
+    .chart-legend { display: flex; flex-wrap: wrap; gap: .5rem 1.2rem; margin-top: .5rem; font-size: .78rem; opacity: .85; }
+    .legend-item { display: flex; align-items: center; gap: .4rem; }
+    .legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+    .chart-tooltip {
+      position: fixed; pointer-events: none; z-index: 10; opacity: 0;
+      transition: opacity .1s ease; max-width: 240px;
+      background: var(--card-bg); border: 1px solid var(--border-th);
+      box-shadow: 0 4px 16px rgba(0,0,0,.25);
+      border-radius: 8px; padding: .5rem .65rem; font-size: .78rem; line-height: 1.4;
+    }
+    .chart-tooltip.visible { opacity: 1; }
+    .chart-tooltip .tt-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .chart-tooltip .tt-label { opacity: .75; }
+    .status-row { display: flex; align-items: center; gap: .3rem; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .status-good { background: var(--status-good); }
+    .status-muted { background: var(--status-muted); }
+    .status-serious { background: var(--status-serious); }
+    .status-critical { background: var(--status-critical); }
+    .status-caption { font-size: .78rem; opacity: .7; margin: -.3rem 0 .6rem; }
+  </style>
+  <script>
+    // Applied ASAP (before paint): if the URL's 'tz' param (the browser's own
+    // UTC offset in minutes, read by web/app.py as _tz_delta_minutes() to
+    // shift 'today'/'year' boundaries and chart buckets into the browser's
+    // time zone instead of the server's) is missing or stale -- first visit,
+    // or a DST transition since the last one -- redirect to a URL with it
+    // corrected, preserving every other query param (period/room/etc). Once
+    // present the filter form's hidden 'tz' field (below) carries it forward
+    // on every filter change, and apiUrl()'s reuse of location.search carries
+    // it to the polling fetch too, so this only fires when it's actually
+    // wrong -- comparing straight off the URL (not a side channel like a
+    // cookie) means there's no failure mode where this could loop forever.
+    // Works without JS by simply leaving 'tz' absent -- see the None case in
+    // _tz_delta_minutes(), which renders in the server's own time zone.
+    (function () {
+      var minutes = String(-new Date().getTimezoneOffset());
+      var params = new URLSearchParams(location.search);
+      if (params.get('tz') !== minutes) {
+        params.set('tz', minutes);
+        location.replace(location.pathname + '?' + params.toString() + location.hash);
+      }
+    })();
+    // Applied ASAP (before paint) so a saved preference doesn't flash the
+    // wrong theme first. Keeping the whole toggle in one inline block matches
+    // the rest of the page: no external assets, works without JS by simply
+    // falling back to the OS-level prefers-color-scheme.
+    (function () {
+      var saved = localStorage.getItem('theme');
+      if (saved === 'light' || saved === 'dark') {
+        document.documentElement.setAttribute('data-theme', saved);
+        document.documentElement.style.colorScheme = saved;
+      }
+    })();
+    function resolvedTheme() {
+      var explicit = document.documentElement.getAttribute('data-theme');
+      if (explicit) return explicit;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function toggleTheme() {
+      var next = resolvedTheme() === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      document.documentElement.style.colorScheme = next;
+      localStorage.setItem('theme', next);
+      updateToggleLabel();
+    }
+    function updateToggleLabel() {
+      var btn = document.getElementById('theme-toggle');
+      if (btn) btn.textContent = resolvedTheme() === 'dark' ? '☀️' : '🌙';
+    }
+    document.addEventListener('DOMContentLoaded', updateToggleLabel);
+  </script>
+  <noscript><style>#theme-toggle { display: none; }</style></noscript>
+</head>
+<body>
+  <div class="header">
+    <h1>🎵 Sonos Play History</h1>
+    <button id="theme-toggle" type="button" onclick="toggleTheme()" aria-label="Toggle light/dark theme">🌙</button>
+  </div>
+
+  <form class="filters" method="get" action="">
+    <!-- Browser UTC offset in minutes, set by the tz-detection script in
+         <head>; carried forward on every filter change so 'today'/'year' and
+         the chart keep rendering in the browser's time zone (see
+         _tz_delta_minutes() in web/app.py) instead of losing it and
+         round-tripping through a redirect on every submit. -->
+    <input type="hidden" name="tz" value="{{ selected_tz if selected_tz is not none else '' }}">
+    <label>Period
+      <select name="period" onchange="this.form.submit()">
+        {% for value, plabel in periods.items() %}
+          <option value="{{ value }}" {{ 'selected' if value == selected_period }}>{{ plabel }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Room
+      <select name="room" onchange="this.form.submit()">
+        <option value="all" {{ 'selected' if selected_room == 'all' }}>All rooms</option>
+        {% for r in rooms %}
+          <option value="{{ r }}" {{ 'selected' if r == selected_room }}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Show
+      <select name="n" onchange="this.form.submit()">
+        {% for n in limit_choices %}
+          <option value="{{ n }}" {{ 'selected' if n == selected_limit }}>Top {{ n }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Order
+      <select name="order" onchange="this.form.submit()">
+        {% for value, spec in orders.items() %}
+          <option value="{{ value }}" {{ 'selected' if value == selected_order }}>{{ spec[1] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button type="submit">Apply</button></noscript>
+  </form>
+
+  <div class="grid">
+    <section class="card chart-card">
+      <h2>System Status</h2>
+      <p class="status-caption">Not affected by the filters above.</p>
+      <div id="status-body">{% include "_status_table.html" %}</div>
+    </section>
+    <section class="card chart-card">
+      <h2>Track Plays by Artist Over Time</h2>
+      <noscript><p class="empty">JavaScript is required for this chart.</p></noscript>
+      <div id="chart-time-wrap"{{ ' style="display:none"' | safe if not chart }}>
+        <div id="chart-time" class="d3-chart d3-chart-time"></div>
+        <div id="chart-time-legend" class="chart-legend"></div>
+      </div>
+      <p id="chart-time-empty" class="empty"{{ ' style="display:none"' | safe if chart }}>No plays in this period.</p>
+      <script type="application/json" id="chart-time-data">{{ chart | tojson }}</script>
+    </section>
+    <section class="card chart-card">
+      <h2>Artist Share</h2>
+      <noscript><p class="empty">JavaScript is required for this chart.</p></noscript>
+      <div id="chart-share-wrap"{{ ' style="display:none"' | safe if not artist_share }}>
+        <div id="chart-share" class="d3-chart d3-chart-share"></div>
+        <div id="chart-share-legend" class="chart-legend"></div>
+      </div>
+      <p id="chart-share-empty" class="empty"{{ ' style="display:none"' | safe if artist_share }}>No plays in this period.</p>
+      <script type="application/json" id="chart-share-data">{{ artist_share | tojson }}</script>
+    </section>
+    {% for dim, table in tables.items() %}
+      <section class="card">
+        <h2>{{ table.label }}</h2>
+        <div id="panel-{{ dim }}-body">{% include "_ranked_table.html" %}</div>
+      </section>
+    {% endfor %}
+  </div>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    // D3-rendered charts. Loaded as a plain (non-deferred) script *after* the
+    // d3.v7 CDN tag and the JSON data islands above, so d3 and the data are
+    // both guaranteed ready by the time this runs -- deliberately not using
+    // `defer` (which would execute in document order relative to other
+    // deferred scripts, not necessarily after this inline block).
+    (function () {
+      if (typeof d3 === 'undefined') return;
+
+      // A rect with independent per-corner radii, expressed as a path (plain
+      // SVG <rect> only supports one uniform rx/ry). Used for the time
+      // chart's rounded-top/square-baseline bars and the share bar's
+      // rounded-outer-ends/square-inner-seams segments.
+      function roundedRectPath(x, y, w, h, r) {
+        r = r || {};
+        var tl = Math.max(0, Math.min(r.tl || 0, w / 2, h / 2));
+        var tr = Math.max(0, Math.min(r.tr || 0, w / 2, h / 2));
+        var br = Math.max(0, Math.min(r.br || 0, w / 2, h / 2));
+        var bl = Math.max(0, Math.min(r.bl || 0, w / 2, h / 2));
+        return "M" + (x + tl) + "," + y +
+          "H" + (x + w - tr) +
+          (tr ? "A" + tr + "," + tr + " 0 0 1 " + (x + w) + "," + (y + tr) : "") +
+          "V" + (y + h - br) +
+          (br ? "A" + br + "," + br + " 0 0 1 " + (x + w - br) + "," + (y + h) : "") +
+          "H" + (x + bl) +
+          (bl ? "A" + bl + "," + bl + " 0 0 1 " + x + "," + (y + h - bl) : "") +
+          "V" + (y + tl) +
+          (tl ? "A" + tl + "," + tl + " 0 0 1 " + (x + tl) + "," + y : "") +
+          "Z";
+      }
+
+      var tooltipEl = null;
+      function getTooltip() {
+        if (!tooltipEl) {
+          tooltipEl = document.createElement("div");
+          tooltipEl.className = "chart-tooltip";
+          document.body.appendChild(tooltipEl);
+        }
+        return tooltipEl;
+      }
+      // valueText/labelText are untrusted (artist/station names from the DB)
+      // so they're inserted via textContent, never innerHTML.
+      function showTooltip(event, valueText, labelText) {
+        var tt = getTooltip();
+        tt.innerHTML = "";
+        var v = document.createElement("div");
+        v.className = "tt-value";
+        v.textContent = valueText;
+        var l = document.createElement("div");
+        l.className = "tt-label";
+        l.textContent = labelText;
+        tt.appendChild(v);
+        tt.appendChild(l);
+        tt.classList.add("visible");
+
+        var pad = 14, x, y;
+        if (event.type === "focus") {
+          var rect = event.target.getBoundingClientRect();
+          x = rect.left;
+          y = rect.bottom + pad;
+        } else {
+          x = event.clientX + pad;
+          y = event.clientY + pad;
+        }
+        var maxX = window.innerWidth - tt.offsetWidth - 8;
+        var maxY = window.innerHeight - tt.offsetHeight - 8;
+        tt.style.left = Math.min(Math.max(8, x), Math.max(8, maxX)) + "px";
+        tt.style.top = Math.min(Math.max(8, y), Math.max(8, maxY)) + "px";
+      }
+      function hideTooltip() {
+        if (tooltipEl) tooltipEl.classList.remove("visible");
+      }
+
+      // A legend is only meaningful for 2+ series (dataviz skill: a single
+      // series needs no legend box, the title already names it).
+      function renderLegend(el, items) {
+        if (!el) return;
+        el.innerHTML = "";
+        if (!items || items.length < 2) return;
+        var entered = d3.select(el).selectAll("span.legend-item").data(items).join("span")
+          .attr("class", "legend-item");
+        entered.append("span").attr("class", "legend-swatch")
+          .style("background", function (d) { return "var(" + d.color_var + ")"; });
+        entered.append("span").text(function (d) { return d.name; });
+      }
+
+      function renderTimeChart(containerId, dataId, legendId, wrapId, emptyId) {
+        var el = document.getElementById(containerId);
+        var dataEl = document.getElementById(dataId);
+        var wrapEl = document.getElementById(wrapId);
+        var emptyEl = document.getElementById(emptyId);
+        if (!el || !dataEl) return;
+        var data = JSON.parse(dataEl.textContent);
+        var hasData = !!(data && data.buckets && data.buckets.length);
+        if (wrapEl) wrapEl.style.display = hasData ? "" : "none";
+        if (emptyEl) emptyEl.style.display = hasData ? "none" : "";
+        if (!hasData) { el.innerHTML = ""; return; }
+
+        function draw() {
+          el.innerHTML = "";
+          var width = el.clientWidth;
+          if (!width) return;
+          var height = 220;
+          var margin = { top: 8, right: 8, bottom: 24, left: 42 };
+          var innerW = Math.max(0, width - margin.left - margin.right);
+          var innerH = height - margin.top - margin.bottom;
+
+          var svg = d3.select(el).append("svg")
+            .attr("width", width).attr("height", height)
+            .attr("viewBox", "0 0 " + width + " " + height);
+          var g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+          var x = d3.scaleBand()
+            .domain(data.buckets.map(function (b) { return b.bucket; }))
+            .range([0, innerW]).paddingInner(0.15);
+          var maxTotal = d3.max(data.buckets, function (b) { return b.total; }) || 1;
+          var y = d3.scaleLinear().domain([0, maxTotal]).nice().range([innerH, 0]);
+
+          // Recessive hairline gridlines, one per y-tick, plus the baseline.
+          g.append("g").selectAll("line").data(y.ticks(5)).join("line")
+            .attr("class", "gridline")
+            .attr("x1", 0).attr("x2", innerW)
+            .attr("y1", function (d) { return y(d); }).attr("y2", function (d) { return y(d); });
+          g.append("line").attr("class", "gridline")
+            .attr("x1", 0).attr("x2", innerW).attr("y1", innerH).attr("y2", innerH);
+
+          g.append("g").attr("class", "axis y-axis")
+            .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format(",")).tickSize(0).tickPadding(8))
+            .call(function (axisG) { axisG.select(".domain").remove(); });
+
+          var xAxisG = g.append("g").attr("class", "axis x-axis")
+            .attr("transform", "translate(0," + innerH + ")");
+          xAxisG.selectAll("text")
+            .data(data.buckets.filter(function (b) { return b.label !== null; }))
+            .join("text")
+            .attr("x", function (b) { return x(b.bucket) + x.bandwidth() / 2; })
+            .attr("y", 18)
+            .attr("text-anchor", "middle")
+            .text(function (b) { return b.label; });
+
+          var barW = Math.min(24, x.bandwidth());
+
+          var bar = g.append("g").selectAll("g.bar").data(data.buckets).join("g")
+            .attr("class", "bar")
+            .attr("transform", function (b) { return "translate(" + (x(b.bucket) + (x.bandwidth() - barW) / 2) + ",0)"; });
+
+          bar.each(function (b) {
+            var barG = d3.select(this);
+
+            // Invisible full-height hit target so hovering the empty space
+            // above a short bar (or a zero-play bucket) still shows a
+            // tooltip with the bucket total.
+            barG.append("rect")
+              .attr("x", 0).attr("y", 0).attr("width", barW).attr("height", innerH)
+              .attr("fill", "transparent")
+              .on("pointerenter pointermove", function (event) {
+                showTooltip(event, b.total + " play" + (b.total !== 1 ? "s" : "") + " total", b.bucket);
+              })
+              .on("pointerleave", hideTooltip);
+
+            if (!b.total) return;
+
+            var barTopY = y(b.total);
+            var clipId = "bar-clip-" + containerId + "-" + b.bucket.replace(/\W/g, "");
+            barG.append("clipPath").attr("id", clipId).append("path")
+              .attr("d", roundedRectPath(0, barTopY, barW, innerH - barTopY, { tl: 4, tr: 4, bl: 0, br: 0 }));
+
+            var cum = 0;
+            var segRects = b.segments.map(function (seg) {
+              var y0 = cum, y1 = cum + seg.plays;
+              cum = y1;
+              return { seg: seg, yTop: y(y1), yBottom: y(y0) };
+            });
+
+            barG.append("g").attr("clip-path", "url(#" + clipId + ")")
+              .selectAll("rect").data(segRects).join("rect")
+              .attr("class", "mark")
+              .attr("tabindex", 0)
+              .attr("x", 0).attr("width", barW)
+              .attr("y", function (d) { return d.yTop + 1; })
+              .attr("height", function (d) { return Math.max(0, d.yBottom - d.yTop - 2); })
+              .attr("fill", function (d) { return "var(" + d.seg.color_var + ")"; })
+              .on("pointerenter pointermove focus", function (event, d) {
+                showTooltip(event, d.seg.plays + " play" + (d.seg.plays !== 1 ? "s" : ""), d.seg.artist + " · " + b.bucket);
+              })
+              .on("pointerleave blur", hideTooltip);
+          });
+        }
+
+        el.__redraw = draw;
+        draw();
+        renderLegend(document.getElementById(legendId), data.series);
+        if (!el.__roAttached) {
+          el.__roAttached = true;
+          var pending = null;
+          new ResizeObserver(function () {
+            if (pending) cancelAnimationFrame(pending);
+            pending = requestAnimationFrame(function () { if (el.__redraw) el.__redraw(); });
+          }).observe(el);
+        }
+      }
+
+      function renderShareChart(containerId, dataId, legendId, wrapId, emptyId) {
+        var el = document.getElementById(containerId);
+        var dataEl = document.getElementById(dataId);
+        var wrapEl = document.getElementById(wrapId);
+        var emptyEl = document.getElementById(emptyId);
+        if (!el || !dataEl) return;
+        var data = JSON.parse(dataEl.textContent);
+        var hasData = !!(data && data.segments && data.segments.length);
+        if (wrapEl) wrapEl.style.display = hasData ? "" : "none";
+        if (emptyEl) emptyEl.style.display = hasData ? "none" : "";
+        if (!hasData) { el.innerHTML = ""; return; }
+
+        function draw() {
+          el.innerHTML = "";
+          var width = el.clientWidth;
+          if (!width) return;
+          var height = 24;
+          var svg = d3.select(el).append("svg")
+            .attr("width", width).attr("height", height)
+            .attr("viewBox", "0 0 " + width + " " + height);
+
+          var x = d3.scaleLinear().domain([0, 100]).range([0, width]);
+          var cum = 0;
+          var segs = data.segments.map(function (seg, i) {
+            var x0 = cum, x1 = cum + seg.pct;
+            cum = x1;
+            return { seg: seg, x0: x0, x1: x1, isFirst: i === 0, isLast: i === data.segments.length - 1 };
+          });
+
+          svg.selectAll("path").data(segs).join("path")
+            .attr("class", "mark")
+            .attr("tabindex", 0)
+            .attr("d", function (d) {
+              var px0 = x(d.x0) + (d.isFirst ? 0 : 1);
+              var px1 = x(d.x1) - (d.isLast ? 0 : 1);
+              return roundedRectPath(px0, 0, Math.max(0, px1 - px0), height, {
+                tl: d.isFirst ? 4 : 0, bl: d.isFirst ? 4 : 0,
+                tr: d.isLast ? 4 : 0, br: d.isLast ? 4 : 0,
+              });
+            })
+            .attr("fill", function (d) { return "var(" + d.seg.color_var + ")"; })
+            .on("pointerenter pointermove focus", function (event, d) {
+              showTooltip(event, d.seg.pct + "%", d.seg.artist + " · " + d.seg.plays + " play" + (d.seg.plays !== 1 ? "s" : ""));
+            })
+            .on("pointerleave blur", hideTooltip);
+        }
+
+        el.__redraw = draw;
+        draw();
+        renderLegend(
+          document.getElementById(legendId),
+          data.segments.map(function (s) { return { name: s.artist + " (" + s.pct + "%)", color_var: s.color_var }; })
+        );
+        if (!el.__roAttached) {
+          el.__roAttached = true;
+          var pending = null;
+          new ResizeObserver(function () {
+            if (pending) cancelAnimationFrame(pending);
+            pending = requestAnimationFrame(function () { if (el.__redraw) el.__redraw(); });
+          }).observe(el);
+        }
+      }
+
+      var TIME_CHART_IDS = { containerId: "chart-time", dataId: "chart-time-data", legendId: "chart-time-legend", wrapId: "chart-time-wrap", emptyId: "chart-time-empty" };
+      var SHARE_CHART_IDS = { containerId: "chart-share", dataId: "chart-share-data", legendId: "chart-share-legend", wrapId: "chart-share-wrap", emptyId: "chart-share-empty" };
+
+      renderTimeChart(TIME_CHART_IDS.containerId, TIME_CHART_IDS.dataId, TIME_CHART_IDS.legendId, TIME_CHART_IDS.wrapId, TIME_CHART_IDS.emptyId);
+      renderShareChart(SHARE_CHART_IDS.containerId, SHARE_CHART_IDS.dataId, SHARE_CHART_IDS.legendId, SHARE_CHART_IDS.wrapId, SHARE_CHART_IDS.emptyId);
+
+      // Polling: re-fetch the current filtered view every 15s and patch only
+      // what changed, so plays/status show up without a manual reload. The
+      // request reuses location.search, so it automatically respects
+      // whatever period/room/limit/order is currently selected.
+      var POLL_INTERVAL_MS = 15000;
+      var pollInFlight = false;
+
+      // Built from location.pathname (never a hardcoded leading slash) so
+      // this keeps working under the /sonos/ Apache proxy prefix -- same
+      // reason the filter <form> uses action="" instead of an absolute
+      // path (see CLAUDE.md's "Deployment" section). Apache strips the
+      // prefix before forwarding to Flask, so Flask never sees it; only the
+      // browser's own location knows the real mount path.
+      function apiUrl(path) {
+        var base = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
+        return base + path + location.search;
+      }
+
+      // Swaps in freshly-fetched table HTML, tagging any row that's new or
+      // whose content changed (matched by the row's data-key/data-sig, set
+      // server-side in _ranked_table.html/_status_table.html) with
+      // .row-changed so the CSS fade-highlight animation plays on just that
+      // row. A row's data-key deliberately excludes volatile fields (play
+      // count, status updated_at) so re-ranking or a routine status refresh
+      // alone never counts as a "change" -- see the comments in app.py.
+      function patchTable(el, newHtml) {
+        if (!el || el.innerHTML === newHtml) return;
+
+        var oldSigs = {};
+        el.querySelectorAll("tr[data-key]").forEach(function (tr) {
+          oldSigs[tr.getAttribute("data-key")] = tr.getAttribute("data-sig");
+        });
+
+        var temp = document.createElement("div");
+        temp.innerHTML = newHtml;
+        temp.querySelectorAll("tr[data-key]").forEach(function (tr) {
+          var key = tr.getAttribute("data-key");
+          if (!(key in oldSigs) || oldSigs[key] !== tr.getAttribute("data-sig")) {
+            tr.classList.add("row-changed");
+          }
+        });
+
+        el.innerHTML = temp.innerHTML;
+      }
+
+      // Only touches the data island + redraws when the fetched chart data
+      // actually differs from what's currently rendered, so a chart never
+      // re-animates or loses hover state on a poll tick where nothing changed.
+      function refreshChart(ids, newData, renderFn) {
+        var dataEl = document.getElementById(ids.dataId);
+        if (!dataEl) return;
+        var newText = JSON.stringify(newData === undefined ? null : newData);
+        if (dataEl.textContent === newText) return;
+        dataEl.textContent = newText;
+        renderFn(ids.containerId, ids.dataId, ids.legendId, ids.wrapId, ids.emptyId);
+      }
+
+      function pollRefresh() {
+        if (pollInFlight || document.hidden) return;
+        pollInFlight = true;
+        fetch(apiUrl("api/refresh"), { cache: "no-store" })
+          .then(function (res) { return res.ok ? res.json() : null; })
+          .then(function (payload) {
+            if (!payload) return;
+            patchTable(document.getElementById("status-body"), payload.status_html);
+            Object.keys(payload.tables_html || {}).forEach(function (dim) {
+              patchTable(document.getElementById("panel-" + dim + "-body"), payload.tables_html[dim]);
+            });
+            refreshChart(TIME_CHART_IDS, payload.chart, renderTimeChart);
+            refreshChart(SHARE_CHART_IDS, payload.artist_share, renderShareChart);
+          })
+          .catch(function () { /* network hiccup -- next tick will retry */ })
+          .finally(function () { pollInFlight = false; });
+      }
+
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) pollRefresh();
+      });
+      setInterval(pollRefresh, POLL_INTERVAL_MS);
+    })();
+  </script>
+</body>
+</html>

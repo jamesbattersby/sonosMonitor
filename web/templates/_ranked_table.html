@@ -1,0 +1,38 @@
+{% if table.rows %}
+  <table>
+    <thead>
+      <tr>
+        <th class="rank">#</th>
+        <th class="pos-change" title="Change vs previous period">&Delta;</th>
+        {% for col in table.rows[0].keys() if col not in ('plays', '_key', '_sig', '_pos_symbol', '_pos_delta', '_rank', '_rank_tied') %}
+          <th>{{ col | capitalize }}</th>
+        {% endfor %}
+        <th class="plays">Plays</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in table.rows %}
+        <tr data-key="{{ row._key }}" data-sig="{{ row._sig }}">
+          <td class="rank">{{ '=' if row._rank_tied else row._rank }}</td>
+          <td class="pos-change">
+            {% if row._pos_symbol == 'up' %}
+              <span class="pos pos-up" title="Up {{ row._pos_delta }} vs previous period">&#9650;<span class="pos-delta">{{ row._pos_delta }}</span></span>
+            {% elif row._pos_symbol == 'down' %}
+              <span class="pos pos-down" title="Down {{ row._pos_delta }} vs previous period">&#9660;<span class="pos-delta">{{ row._pos_delta }}</span></span>
+            {% elif row._pos_symbol == 'same' %}
+              <span class="pos pos-same" title="No change vs previous period">&#9664;&#9654;</span>
+            {% elif row._pos_symbol == 'new' %}
+              <span class="pos pos-new" title="New entry this period">&#x274A;</span>
+            {% endif %}
+          </td>
+          {% for col, val in row.items() if col not in ('plays', '_key', '_sig', '_pos_symbol', '_pos_delta', '_rank', '_rank_tied') %}
+            <td>{{ val }}</td>
+          {% endfor %}
+          <td class="plays"><span class="count">{{ row.plays }}</span></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="empty">No plays in this period.</p>
+{% endif %}
