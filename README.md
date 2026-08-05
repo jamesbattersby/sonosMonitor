@@ -5,6 +5,14 @@ history as a web dashboard — top tracks, artists, albums and radio stations,
 filterable by time period and room — plus a live system-status panel (per-room
 online/offline, volume, grouping, battery).
 
+It has two long-running parts that share one SQLite database, plus an optional
+Apache front end:
+
+```
+sonosMonitor.py ──write──▶  sonos.db  ◀──read──  web/app.py (Flask) ◀──proxy── Apache
+   (logger)              (SQLite, WAL)              (dashboard)              (/sonos/)
+```
+
 ## The Web Interface
 
 At the top are some filter selections, system status and graphs showing the numbers of play starts over time.
@@ -19,14 +27,7 @@ previous period (if you are showing data for 1 week, the delta will be from the 
 ![Top Artists](./doc-images/top-artists.png)
 
 Other panels contain the Top Albums, Top Radio Stations, Music Services and Line-In.
-
-It has two long-running parts that share one SQLite database, plus an optional
-Apache front end:
-
-```
-sonosMonitor.py ──write──▶  sonos.db  ◀──read──  web/app.py (Flask) ◀──proxy── Apache
-   (logger)              (SQLite, WAL)              (dashboard)              (/sonos/)
-```
+Note that for Radio stations, only the station name is logged and not the tracks being played.
 
 ## What each part does
 
