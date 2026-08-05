@@ -1,0 +1,33 @@
+{% if status %}
+  <table>
+    <thead>
+      <tr>
+        <th>Room</th>
+        <th>Status</th>
+        <th class="plays">Volume</th>
+        <th>Group</th>
+        <th class="plays">Battery</th>
+        <th>Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in status %}
+        <tr data-key="{{ row._key }}" data-sig="{{ row._sig }}">
+          <td>{{ row.room }}</td>
+          <td>
+            <span class="status-row">
+              <span class="status-dot status-{{ row.status_class }}"></span>
+              {{ row.state_label }}{{ ' 🔇' if row.mute }}
+            </span>
+          </td>
+          <td class="plays">{{ (row.volume ~ '%') if row.volume is not none else '—' }}</td>
+          <td>{{ row.group_label or '—' }}</td>
+          <td class="plays">{{ (row.battery_level ~ '%') if row.battery_level is not none else '—' }}</td>
+          <td>{{ row.updated_at }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="empty">No status yet &mdash; waiting for the logger's first sweep.</p>
+{% endif %}
